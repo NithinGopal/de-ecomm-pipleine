@@ -1,0 +1,11 @@
+# Core Data Processing
+pandas>=2.1.0,<2.3.0
+
+# AWS Integration
+boto3>=1.28.35,<2.0.0
+
+# Orchestration
+prefect>=3.0.0,<4.0.0
+
+# Configuration Management
+python-dotenv>=1.0.0,<2.0.0
