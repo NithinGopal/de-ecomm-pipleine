@@ -89,8 +89,45 @@ def upload_data_to_s3():
         print("Check your AWS Credentials and S3 Bucked permissions")
         return False
     
-    # Verification
+
+# Verification
+def verify_upload():
+    print("\nVerifying Upload ...")
     
+    # Load environment variables
+    load_dotenv()
+    
+    # Get AWS credentials from .env file
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+    
+    try:
+        # Create S3 Client
+        s3 = boto3.client('s3', region_name=region)
+        
+        response = s3.list_objects_v2(Bucket= bucket_name, Prefix = "raw-data/")
+        
+        if "Contents" not in response:
+            print("ERROR: No files found in bucket")
+            return False
+        
+        files = response["Contents"]
+        print(f"Found {len(files)} files in S3:")
+        
+        total_size_mb = 0
+        
+        for file in files:
+            size_mb = file['Size'] / (1024*1024)
+            total_size_mb += size_mb
+            print(f"{file["Key"]} ({size_mb: .2f} MB)")
+            
+        print(f"Total Data Size: {total_size_mb: .2f} MB")
+        print("Upload verification complete!")
+        return True
+    
+    except Exception as e:
+        print(f"ERROR: Upload Verification Failed: {e}")
+        return False
         
 if __name__ == "__main__":
     # Run upload
