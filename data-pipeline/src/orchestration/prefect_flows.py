@@ -1,4 +1,5 @@
 """
+DATA PROCESSING PIPELINE
 Download data from S3, clean it, transforme it and upload it back to S3
 """
 
@@ -10,58 +11,18 @@ from dotenv import load_dotenv
 from datetime import datetime
 import tempfile
 
-def process_ecomm_data():
-    """
-    Download, process, and upload e-comm data
-    """
-    # Load environment variables
-    load_dotenv()
-    
-    # Get AWS credentials from .env file
-    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
-    region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-    
-    if not bucket_name:
-        print(f"ERROR: AWS_S3_BUCKET_NAME not found in .env file!")
-        return False
-    
-    print(f"Bucket: {bucket_name}")
-    print(f"Region: {region}")
-    
-    print(f"Processing data from bucket: {bucket_name}")
-    
-    try:
-        # Create S3 Client
-        s3 = boto3.client('s3', region_name = region)
-        
-        # Step 1: Download data from S3 bucket
-        print(f"\nStep 1: Downloading data from S3 bucket - {bucket_name} ...")
-        datasets = download_data_from_s3(s3, bucket_name)
-        
-        # Step 2: Clean and transform data
-        print("\nStep 2: Cleaning and transforming data ...")
-        processed_datasets = transform_data(datasets)
-        
-        # Step 3: Create Business Metrics
-        print("\nStep 3: Creating Business Metrics ...")
-        business_metrics = create_business_metrics(processed_datasets)
-        
-        # Step 4: Upload processed data back to S3
-        print("\nStep 4: Uploading processed data back to S3 ...")        
-        upload_success = upload_processed_data(s3, bucket_name, processed_datasets, business_metrics)
-        
-        if upload_success:
-            print("\nSUCCESS: Data Pipeline Processing Completed!")
-            return True
-        else:
-            print("\nERROR:Failed to upload processed data")
-            return False
-    except Exception as e:
-        print(f"ERROR: Data Processing Pipeline Failed: {e}")
-        return False
+from prefect import flow, task, get_run_logger
+
+# Logging Setup
+logger = get_run_logger()
 
 # Extract Raw Data files from S3 
+@task(name="download_data_from_s3", retries=2, retry_delay_seconds=30, cache_policy=None)
 def download_data_from_s3(s3, bucket_name):
+    
+    # Add logs for traceability 
+    logger.info("Starting data download from S3")
+    
     # Save each data file dataframe into the datasets dict
     datasets = {}
     
@@ -69,7 +30,7 @@ def download_data_from_s3(s3, bucket_name):
     
     for file_name in data_files:
         try:
-            print(f"Downloading {file_name} ...")
+            logger.info(f"Downloading {file_name} ...")
             
             s3_key = f"raw-data/{file_name}"
             
@@ -84,19 +45,23 @@ def download_data_from_s3(s3, bucket_name):
             
             datasets[dataset_name] = df
             
-            print(f"Loaded {dataset_name}: {len(df)} records")
+            logger.info(f"Loaded {dataset_name}: {len(df)} records")
             
             # Remove the temporary local files as the dataset is saved in a dataframe to be processed
             os.remove(local_path)
             
         except Exception as e:
-            print(f"Failed to download {file_name}: {e}")
+            logger.error(f"Failed to download {file_name}: {e}")
             return False
     
     return datasets
 
 # Transform the data stored in temporary Dataframe datasets stored in 'datasets' dict
+@task(name="transform_data", retries=1)
 def transform_data(datasets):
+    
+    # Add logs for traceability 
+    
     # Store the processed dataframes in this dict
     processed = {}
     
@@ -123,8 +88,9 @@ def transform_data(datasets):
         
         processed['customers_clean'] = customers
         
-        print(f"Processed customers: {len(customers)} records")
+        logger.info(f"Processed customers: {len(customers)} records")
         
+    # Process products data    
     if 'products' in datasets:
         products = datasets['products'].copy()
         
@@ -140,7 +106,7 @@ def transform_data(datasets):
 
         processed['products_clean'] = products
 
-        print(f'Processed products: {len(products)} records')
+        logger.info(f'Processed products: {len(products)} records')
         
     # Process orders data
     if 'orders' in datasets:
@@ -159,7 +125,7 @@ def transform_data(datasets):
         
         processed['orders_clean'] = orders
         
-        print(f"Processed orders: {len(orders)} records")
+        logger.info(f"Processed orders: {len(orders)} records")
         
     # Process order items data
     if 'order_items' in datasets:
@@ -174,7 +140,7 @@ def transform_data(datasets):
         
         processed['order_items_clean'] = order_items
         
-        print(f"Processed order_items: {len(order_items)} records")
+        logger.info(f"Processed order_items: {len(order_items)} records")
         
     # Process review data
     if 'reviews' in datasets:
@@ -195,10 +161,11 @@ def transform_data(datasets):
         
         processed['reviews_clean'] = reviews
         
-        print(f"Processed reviews: {len(reviews)} records")
+        logger.info(f"Processed reviews: {len(reviews)} records")
         
     return processed
 
+@task(name='create_business_metrics', retries=1)
 def create_business_metrics(processed_datasets):
     
     metrics = {}
@@ -226,7 +193,7 @@ def create_business_metrics(processed_datasets):
         
         metrics['customer_metrics'] = customer_metrics
         
-        print(f"Created customer metrics: {len(customer_metrics)} customers")
+        logger.info(f"Created customer metrics: {len(customer_metrics)} customers")
         
     # Product performance metrics
     
@@ -248,7 +215,7 @@ def create_business_metrics(processed_datasets):
         product_metrics = product_metrics.merge(products[['product_id', 'product_name', 'category', 'price']], on = 'product_id')
         
         metrics['product_metrics'] = product_metrics
-        print(f"Created product metrics: {len(product_metrics)} products")
+        logger.info(f"Created product metrics: {len(product_metrics)} products")
         
     # Monthly Sales Trends
     
@@ -264,10 +231,11 @@ def create_business_metrics(processed_datasets):
         monthly_sales = monthly_sales.reset_index()
         
         metrics['monthly_sales'] = monthly_sales
-        print(f"Created monthly sales trends: {len(monthly_sales)} months")
+        logger.info(f"Created monthly sales trends: {len(monthly_sales)} months")
         
     return metrics
 
+@task(name='upload_processed_data', retries=2, retry_delay_seconds=45, cache_policy=None)
 def upload_processed_data(s3, bucket_name, processed, metrics):
     
     upload_count = 0
@@ -284,14 +252,14 @@ def upload_processed_data(s3, bucket_name, processed, metrics):
             s3_key = f"processed/{dataset_name}.csv"
             s3.upload_file(local_path, bucket_name, s3_key)
             
-            print(f"Uploaded {dataset_name}: {len(df)} records")
+            logger.info(f"Uploaded {dataset_name}: {len(df)} records")
             upload_count += 1
             
             # Clean up temp files
             os.remove(local_path)
             
         except Exception as e:
-            print(f"Failed to upload {dataset_name}: {e}")
+            logger.error(f"Failed to upload {dataset_name}: {e}")
             
     # Upload business metrics
     for metric_name, df in metrics.items():
@@ -304,16 +272,71 @@ def upload_processed_data(s3, bucket_name, processed, metrics):
             s3_key = f"processed/metrics/{metric_name}.csv"
             s3.upload_file(local_path, bucket_name, s3_key)
             
-            print(f"Uploaded {metric_name}: {len(df)} records")
+            logger.info(f"Uploaded {metric_name}: {len(df)} records")
             upload_count += 1
             
             # Clean up temp files
             os.remove(local_path)
             
         except Exception as e:
-            print(f"ERROR: Failed to Upload {metric_name}: {e}")
+            logger.error(f"ERROR: Failed to Upload {metric_name}: {e}")
             
     return upload_count == total_files
+
+
+@flow(name='process_ecomm_data_etl_pipeline')
+def process_ecomm_data():
+    """
+    Download, process, and upload e-comm data
+    """
+    
+    logger.info(" Starting data processing with Prefect Orchestration")
+    
+    # Load environment variables
+    load_dotenv()
+    
+    # Get AWS credentials from .env file
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+    
+    if not bucket_name:
+        logger.error(f"ERROR: AWS_S3_BUCKET_NAME not found in .env file!")
+        return False
+    
+    logger.info(f"Bucket: {bucket_name}")
+    logger.info(f"Region: {region}")
+    
+    logger.info(f"Processing data from bucket: {bucket_name}")
+    
+    try:
+        # Create S3 Client
+        s3 = boto3.client('s3', region_name = region)
+        
+        # Step 1: Download data from S3 bucket
+        logger.info(f"\nStep 1: Downloading data from S3 bucket - {bucket_name} ...")
+        datasets = download_data_from_s3(s3, bucket_name)
+        
+        # Step 2: Clean and transform data
+        logger.info("\nStep 2: Cleaning and transforming data ...")
+        processed_datasets = transform_data(datasets)
+        
+        # Step 3: Create Business Metrics
+        logger.info("\nStep 3: Creating Business Metrics ...")
+        business_metrics = create_business_metrics(processed_datasets)
+        
+        # Step 4: Upload processed data back to S3
+        logger.info("\nStep 4: Uploading processed data back to S3 ...")        
+        upload_success = upload_processed_data(s3, bucket_name, processed_datasets, business_metrics)
+        
+        if upload_success:
+            logger.info("\nSUCCESS: Data Pipeline Processing Completed!")
+            return True
+        else:
+            logger.error("\nERROR:Failed to upload processed data")
+            return False
+    except Exception as e:
+        logger.error(f"ERROR: Data Processing Pipeline Failed: {e}")
+        return False
 
 
 if __name__ == "__main__":
@@ -321,7 +344,7 @@ if __name__ == "__main__":
     success = process_ecomm_data()
     
     if success:
-        print("\nNext Step: Orchestration with prefect!")
+        logger.info("\nNext Step: Orchestration with prefect!")
         
     else:
-        print("\nFix the errors and try again")
+        logger.error("\nFix the errors and try again")
