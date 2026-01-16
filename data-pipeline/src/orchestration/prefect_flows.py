@@ -13,14 +13,13 @@ import tempfile
 
 from prefect import flow, task, get_run_logger
 
-# Logging Setup
-logger = get_run_logger()
-
 # Extract Raw Data files from S3 
 @task(name="download_data_from_s3", retries=2, retry_delay_seconds=30, cache_policy=None)
 def download_data_from_s3(s3, bucket_name):
     
     # Add logs for traceability 
+    # Logging Setup
+    logger = get_run_logger()
     logger.info("Starting data download from S3")
     
     # Save each data file dataframe into the datasets dict
@@ -60,7 +59,8 @@ def download_data_from_s3(s3, bucket_name):
 @task(name="transform_data", retries=1)
 def transform_data(datasets):
     
-    # Add logs for traceability 
+    # Add logs for traceability
+    logger = get_run_logger()
     
     # Store the processed dataframes in this dict
     processed = {}
@@ -168,6 +168,9 @@ def transform_data(datasets):
 @task(name='create_business_metrics', retries=1)
 def create_business_metrics(processed_datasets):
     
+    # Logging Setup
+    logger = get_run_logger()
+    
     metrics = {}
     
     # Customer metric
@@ -238,6 +241,9 @@ def create_business_metrics(processed_datasets):
 @task(name='upload_processed_data', retries=2, retry_delay_seconds=45, cache_policy=None)
 def upload_processed_data(s3, bucket_name, processed, metrics):
     
+    # Logging Setup
+    logger = get_run_logger()
+    
     upload_count = 0
     total_files = len(processed) + len(metrics)
     
@@ -289,6 +295,9 @@ def process_ecomm_data():
     """
     Download, process, and upload e-comm data
     """
+    
+    # Logging Setup
+    logger = get_run_logger()
     
     logger.info(" Starting data processing with Prefect Orchestration")
     
@@ -344,7 +353,7 @@ if __name__ == "__main__":
     success = process_ecomm_data()
     
     if success:
-        logger.info("\nNext Step: Orchestration with prefect!")
+        print("\nNext Step: Orchestration with prefect!")
         
     else:
-        logger.error("\nFix the errors and try again")
+        print("\nFix the errors and try again")
