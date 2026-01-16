@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 COPY data-pipeline/requirements.txt .
 
 # Install Python dependencies
-RUN PIP install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY data-pipeline/src ./src/
