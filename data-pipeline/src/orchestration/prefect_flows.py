@@ -291,7 +291,7 @@ def upload_processed_data(s3, bucket_name, processed, metrics):
 
 
 @flow(name='process_ecomm_data_etl_pipeline')
-def process_ecomm_data():
+def process_ecomm_data(name: str = "ecomm-data-pipeline"):
     """
     Download, process, and upload e-comm data
     """
@@ -299,7 +299,7 @@ def process_ecomm_data():
     # Logging Setup
     logger = get_run_logger()
     
-    logger.info(" Starting data processing with Prefect Orchestration")
+    logger.info(f"Starting {name} with Prefect Orchestration")
     
     # Load environment variables
     load_dotenv()
